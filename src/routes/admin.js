@@ -28,8 +28,8 @@ async function adminRoutes(fastify) {
         min-height: 100vh;
       }
       .wrap {
-        width: min(1080px, 92vw);
-        margin: 2rem auto;
+        width: 96vw;
+        margin: 2rem 2rem;
         display: grid;
         grid-template-columns: 340px 1fr;
         gap: 1rem;
