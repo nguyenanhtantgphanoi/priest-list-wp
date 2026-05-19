@@ -63,12 +63,8 @@ async function priestRoutes(fastify) {
   const priests = () => fastify.mongo.db.collection("priest");
 
   fastify.get("/priests", async function listPriests() {
-    const docs = await priests()
-      .find({})
-      .sort({ updatedAt: -1, createdAt: -1 })
-      .toArray();
-
-    return docs.map(toDocument);
+    const docs = await priests().find({}).toArray();
+    return sortByLastWord(docs.map(toDocument));
   });
 
   fastify.get("/priests/by-status/:status", async function listPriestsByStatus(request, reply) {
