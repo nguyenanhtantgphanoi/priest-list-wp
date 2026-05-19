@@ -49,3 +49,5 @@ Open `/admin` in your browser to manage priest profiles.
 - Supports editing and deleting existing records.
 - Form fields are aligned to current document keys:
   `state`, `name`, `nickname`, `avatarUrl`, `sinhNam`, `leQuanThay`, `thuPhongLinhMuc`, `diaChi`, `giaoVu`, `queQuan`, `ngayMat`, `noiAnTang`.
+
+  https://lmwp.tgphanoi.org/api/priests/by-status/
