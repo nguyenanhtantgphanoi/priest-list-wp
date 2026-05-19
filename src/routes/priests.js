@@ -42,6 +42,7 @@ function getLastWord(name = "") {
   }
 
   const parts = trimmed.split(/\s+/);
+  console.log("getLastWord", { name, lastWord: parts[parts.length - 1].toLowerCase() });
   return parts[parts.length - 1].toLowerCase();
 }
 
