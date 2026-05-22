@@ -39,6 +39,15 @@ Server starts on `PORT` (default `3000`).
 - Priests create: `POST /api/priests`
 - Priests update: `PUT /api/priests/:id`
 - Priests delete: `DELETE /api/priests/:id`
+- Deaneries list: `GET /api/deaneries`
+- Deaneries create: `POST /api/deaneries`
+- Deaneries update: `PUT /api/deaneries/:id`
+- Deaneries delete: `DELETE /api/deaneries/:id`
+- Parishes list: `GET /api/parishes`
+- Parishes list with cloned deanery detail: `GET /api/parishes/with-deanery`
+- Parishes create: `POST /api/parishes`
+- Parishes update: `PUT /api/parishes/:id`
+- Parishes delete: `DELETE /api/parishes/:id`
 
 ## Admin Profile Manager
 
@@ -49,5 +58,14 @@ Open `/admin` in your browser to manage priest profiles.
 - Supports editing and deleting existing records.
 - Form fields are aligned to current document keys:
   `state`, `name`, `nickname`, `avatarUrl`, `sinhNam`, `leQuanThay`, `thuPhongLinhMuc`, `diaChi`, `giaoVu`, `queQuan`, `ngayMat`, `noiAnTang`.
+
+## Deanery + Parish Manager
+
+Open `/admin/parishes` in your browser to manage deaneries and parishes.
+
+- Parish field `giao_hat` stores the deanery `_id`.
+- Parish list supports inline editing for parish name and linked deanery.
+- Deanery list supports inline editing.
+- Parish search hides unmatched rows while typing.
 
   https://lmwp.tgphanoi.org/api/priests/by-status/

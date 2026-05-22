@@ -617,6 +617,670 @@ async function adminRoutes(fastify) {
   </body>
 </html>`);
   });
+
+  fastify.get("/admin/parishes", async function parishAdminPage(_request, reply) {
+    return reply.type("text/html").send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deanery and Parish Admin</title>
+    <style>
+      :root {
+        --bg: #f6f4ee;
+        --panel: #fffdf7;
+        --ink: #202022;
+        --muted: #707174;
+        --accent: #b45309;
+        --accent-soft: #fef3c7;
+        --danger: #b91c1c;
+        --line: #d7d3c6;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 8% 10%, #fef3c7 0, #fef3c7 14%, transparent 14%),
+          radial-gradient(circle at 92% 18%, #fde68a 0, #fde68a 12%, transparent 12%),
+          var(--bg);
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+      .wrap {
+        width: min(1200px, 96vw);
+        margin: 1.2rem auto 2rem;
+        display: grid;
+        gap: 1rem;
+      }
+      .top-tabs {
+        display: flex;
+        gap: 0.5rem;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 0.45rem;
+      }
+      .tab-link {
+        padding: 0.5rem 0.8rem;
+        border-radius: 10px;
+        color: #78350f;
+        text-decoration: none;
+        font-weight: 700;
+      }
+      .tab-link.active {
+        background: var(--accent-soft);
+        color: #92400e;
+      }
+      .hero {
+        background: linear-gradient(135deg, #fffbeb 0%, #fff7ed 100%);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 1rem 1.1rem;
+      }
+      .hero h1 {
+        margin: 0;
+        font-size: 1.25rem;
+      }
+      .hero p {
+        margin: 0.45rem 0 0;
+        color: var(--muted);
+      }
+      .hero a {
+        color: #92400e;
+        text-decoration: none;
+        font-weight: 700;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+      }
+      .card h2 {
+        margin: 0;
+        padding: 1rem 1rem 0.2rem;
+        font-size: 1.05rem;
+      }
+      .card p {
+        margin: 0;
+        padding: 0 1rem 0.8rem;
+        color: var(--muted);
+      }
+      .tools {
+        padding: 0 1rem 0.8rem;
+        display: grid;
+        gap: 0.6rem;
+      }
+      label {
+        display: grid;
+        gap: 0.3rem;
+        font-size: 0.9rem;
+      }
+      input, select {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.5rem 0.62rem;
+        font: inherit;
+        background: #fff;
+      }
+      .inline-form {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 0.45rem;
+      }
+      .inline-form.parish {
+        grid-template-columns: 1fr 1fr 1fr 1fr 220px auto;
+      }
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 0.5rem 0.72rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .btn-primary { background: var(--accent); color: #fff; }
+      .btn-muted { background: #ede9dd; color: var(--ink); }
+      .btn-danger { background: var(--danger); color: #fff; }
+      .table-wrap {
+        overflow: auto;
+        padding: 0 0.8rem 0.8rem;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 520px;
+      }
+      th, td {
+        text-align: left;
+        vertical-align: middle;
+        padding: 0.58rem;
+        border-bottom: 1px solid var(--line);
+      }
+      th {
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--muted);
+      }
+      .row-actions {
+        display: flex;
+        gap: 0.38rem;
+      }
+      .status {
+        margin: 0 1rem 0.8rem;
+        color: var(--muted);
+        min-height: 1.15rem;
+        font-size: 0.9rem;
+      }
+      .search-input {
+        border: 1px solid #c9bba2;
+        background: #fffef9;
+      }
+      .parish-hidden {
+        display: none;
+      }
+      @media (max-width: 980px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .inline-form.parish {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <nav class="top-tabs" aria-label="Admin navigation">
+        <a class="tab-link" href="/admin">Priests</a>
+        <a class="tab-link active" href="/admin/parishes">Deaneries and Parishes</a>
+      </nav>
+
+      <section class="hero">
+        <h1>Deanery and Parish Management</h1>
+        <p>Each parish belongs to one deanery via <strong>giao_hat</strong>. Manage both lists inline here. <a href="/admin">Open priest manager</a>.</p>
+      </section>
+
+      <section class="">
+        <section class="card">
+          <h2>Deaneries</h2>
+          <p>Collection: deanery</p>
+          <div class="tools">
+            <form id="deaneryCreateForm" class="inline-form">
+              <label>
+                Deanery name
+                <input id="newDeaneryName" placeholder="Add deanery..." required />
+              </label>
+              <label>
+                Deanery link
+                <input id="newDeaneryHref" placeholder="https://..." />
+              </label>
+              <button type="submit" class="btn-primary">Add</button>
+            </form>
+          </div>
+          <div id="deaneryStatus" class="status"></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Link</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="deaneryRows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Parishes</h2>
+          <p>Collection: parish. Field giao_hat references deanery _id.</p>
+          <div class="tools">
+            <label>
+              Search parish
+              <input id="parishSearch" class="search-input" placeholder="Type to hide unmatched parishes..." />
+            </label>
+            <form id="parishCreateForm" class="inline-form parish">
+              <label>
+                Parish name
+                <input id="newParishName" placeholder="Add parish..." required />
+              </label>
+              <label>
+                Parish link
+                <input id="newParishHref" placeholder="https://..." />
+              </label>
+              <label>
+                Other name
+                <input id="newParishTenKhac" placeholder="Optional alias..." />
+              </label>
+              <label>
+                Address
+                <input id="newParishDiaChi" placeholder="Parish address..." />
+              </label>
+              <label>
+                Deanery
+                <select id="newParishDeanery" required></select>
+              </label>
+              <button type="submit" class="btn-primary">Add</button>
+            </form>
+          </div>
+          <div id="parishStatus" class="status"></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Parish name</th>
+                  <th>Link</th>
+                  <th>Other name</th>
+                  <th>Address</th>
+                  <th>Deanery</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="parishRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      const deaneryRows = document.getElementById("deaneryRows");
+      const parishRows = document.getElementById("parishRows");
+      const parishSearch = document.getElementById("parishSearch");
+      const deaneryStatus = document.getElementById("deaneryStatus");
+      const parishStatus = document.getElementById("parishStatus");
+      const deaneryCreateForm = document.getElementById("deaneryCreateForm");
+      const parishCreateForm = document.getElementById("parishCreateForm");
+      const newDeaneryName = document.getElementById("newDeaneryName");
+      const newDeaneryHref = document.getElementById("newDeaneryHref");
+      const newParishName = document.getElementById("newParishName");
+      const newParishHref = document.getElementById("newParishHref");
+      const newParishTenKhac = document.getElementById("newParishTenKhac");
+      const newParishDiaChi = document.getElementById("newParishDiaChi");
+      const newParishDeanery = document.getElementById("newParishDeanery");
+
+      let deaneryCache = [];
+      let parishCache = [];
+
+      function escapeHtml(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function setDeaneryStatus(message, isError = false) {
+        deaneryStatus.textContent = message;
+        deaneryStatus.style.color = isError ? "#b91c1c" : "#6b7280";
+      }
+
+      function setParishStatus(message, isError = false) {
+        parishStatus.textContent = message;
+        parishStatus.style.color = isError ? "#b91c1c" : "#6b7280";
+      }
+
+      function deaneryOptionsHtml(selectedValue) {
+        return deaneryCache
+          .map((deanery) => {
+            const selected = deanery.id === selectedValue ? " selected" : "";
+            return "<option value='" + escapeHtml(deanery.id) + "'" + selected + ">" + escapeHtml(deanery.name) + "</option>";
+          })
+          .join("");
+      }
+
+      function refreshCreateParishDeaneryOptions() {
+        newParishDeanery.innerHTML = deaneryOptionsHtml("");
+      }
+
+      function renderDeaneryRows() {
+        deaneryRows.innerHTML = "";
+
+        if (!deaneryCache.length) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = "<td colspan='3'>No deaneries found.</td>";
+          deaneryRows.appendChild(tr);
+          return;
+        }
+
+        deaneryCache.forEach((deanery) => {
+          const tr = document.createElement("tr");
+          tr.setAttribute("data-id", deanery.id);
+          tr.innerHTML =
+            "<td><input value='" + escapeHtml(deanery.name) + "' data-field='name' /></td>" +
+            "<td><input value='" + escapeHtml(deanery.href || "") + "' data-field='href' /></td>" +
+            "<td><div class='row-actions'>" +
+            "<button type='button' class='btn-muted' data-action='save'>Save</button>" +
+            "<button type='button' class='btn-danger' data-action='delete'>Delete</button>" +
+            "</div></td>";
+          deaneryRows.appendChild(tr);
+        });
+      }
+
+      function renderParishRows() {
+        parishRows.innerHTML = "";
+
+        if (!parishCache.length) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = "<td colspan='7'>No parishes found.</td>";
+          parishRows.appendChild(tr);
+          return;
+        }
+
+        parishCache.forEach((parish, index) => {
+          const tr = document.createElement("tr");
+          tr.setAttribute("data-id", parish.id);
+          const searchIndex = String(
+            (parish.name || "") + " " +
+            (parish.deaneryName || "") + " " +
+            (parish.ten_khac || "") + " " +
+            (parish.dia_chi || "")
+          ).toLowerCase();
+          tr.setAttribute("data-search", searchIndex);
+          tr.innerHTML =
+            "<td>" + String(index + 1) + "</td>" +
+            "<td><input value='" + escapeHtml(parish.name) + "' data-field='name' /></td>" +
+            "<td><input value='" + escapeHtml(parish.href || "") + "' data-field='href' /></td>" +
+            "<td><input value='" + escapeHtml(parish.ten_khac || "") + "' data-field='ten_khac' /></td>" +
+            "<td><input value='" + escapeHtml(parish.dia_chi || "") + "' data-field='dia_chi' /></td>" +
+            "<td><select data-field='giao_hat'>" + deaneryOptionsHtml(parish.giao_hat) + "</select></td>" +
+            "<td><div class='row-actions'>" +
+            "<button type='button' class='btn-muted' data-action='save'>Save</button>" +
+            "<button type='button' class='btn-danger' data-action='delete'>Delete</button>" +
+            "</div></td>";
+          parishRows.appendChild(tr);
+        });
+
+        applyParishFilter();
+      }
+
+      function applyParishFilter() {
+        const query = parishSearch.value.trim().toLowerCase();
+        const rows = Array.from(parishRows.querySelectorAll("tr[data-id]"));
+        let visible = 0;
+
+        rows.forEach((row) => {
+          const haystack = String(row.getAttribute("data-search") || "");
+          const matched = !query || haystack.includes(query);
+          row.classList.toggle("parish-hidden", !matched);
+          if (matched) {
+            visible += 1;
+          }
+        });
+
+        setParishStatus(
+          "Showing " + visible + " matched parish(es) out of " + parishCache.length + "."
+        );
+      }
+
+      async function fetchDeaneries() {
+        const response = await fetch("/api/deaneries");
+        if (!response.ok) {
+          const body = await response.json();
+          throw new Error(body.error || "Failed to load deaneries.");
+        }
+        deaneryCache = await response.json();
+      }
+
+      async function fetchParishes() {
+        const response = await fetch("/api/parishes");
+        if (!response.ok) {
+          const body = await response.json();
+          throw new Error(body.error || "Failed to load parishes.");
+        }
+        parishCache = await response.json();
+      }
+
+      async function loadAll() {
+        try {
+          setDeaneryStatus("Loading deaneries...");
+          setParishStatus("Loading parishes...");
+          await fetchDeaneries();
+          await fetchParishes();
+          renderDeaneryRows();
+          refreshCreateParishDeaneryOptions();
+          renderParishRows();
+          setDeaneryStatus("Loaded " + deaneryCache.length + " deanery(ies).");
+        } catch (error) {
+          setDeaneryStatus(error.message || "Load failed.", true);
+          setParishStatus(error.message || "Load failed.", true);
+        }
+      }
+
+      async function createDeanery(event) {
+        event.preventDefault();
+        const payload = {
+          name: newDeaneryName.value,
+          href: newDeaneryHref.value,
+        };
+
+        try {
+          setDeaneryStatus("Creating deanery...");
+          const response = await fetch("/api/deaneries", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) {
+            const body = await response.json();
+            throw new Error(body.error || "Failed to create deanery.");
+          }
+
+          newDeaneryName.value = "";
+          newDeaneryHref.value = "";
+          await loadAll();
+          setDeaneryStatus("Deanery created.");
+        } catch (error) {
+          setDeaneryStatus(error.message || "Failed to create deanery.", true);
+        }
+      }
+
+      async function createParish(event) {
+        event.preventDefault();
+        const payload = {
+          name: newParishName.value,
+          href: newParishHref.value,
+          ten_khac: newParishTenKhac.value,
+          dia_chi: newParishDiaChi.value,
+          giao_hat: newParishDeanery.value,
+        };
+
+        try {
+          setParishStatus("Creating parish...");
+          const response = await fetch("/api/parishes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) {
+            const body = await response.json();
+            throw new Error(body.error || "Failed to create parish.");
+          }
+
+          newParishName.value = "";
+          newParishHref.value = "";
+          newParishTenKhac.value = "";
+          newParishDiaChi.value = "";
+          await loadAll();
+          setParishStatus("Parish created.");
+        } catch (error) {
+          setParishStatus(error.message || "Failed to create parish.", true);
+        }
+      }
+
+      async function saveDeaneryRow(row) {
+        const id = row.getAttribute("data-id");
+        const nameInput = row.querySelector("input[data-field='name']");
+        const hrefInput = row.querySelector("input[data-field='href']");
+        const payload = {
+          name: nameInput ? nameInput.value : "",
+          href: hrefInput ? hrefInput.value : "",
+        };
+
+        try {
+          setDeaneryStatus("Saving deanery...");
+          const response = await fetch("/api/deaneries/" + id, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) {
+            const body = await response.json();
+            throw new Error(body.error || "Failed to save deanery.");
+          }
+
+          await loadAll();
+          setDeaneryStatus("Deanery saved.");
+        } catch (error) {
+          setDeaneryStatus(error.message || "Failed to save deanery.", true);
+        }
+      }
+
+      async function deleteDeaneryRow(row) {
+        const id = row.getAttribute("data-id");
+        if (!confirm("Delete this deanery?")) {
+          return;
+        }
+
+        try {
+          setDeaneryStatus("Deleting deanery...");
+          const response = await fetch("/api/deaneries/" + id, { method: "DELETE" });
+
+          if (!response.ok) {
+            const body = await response.json();
+            throw new Error(body.error || "Failed to delete deanery.");
+          }
+
+          await loadAll();
+          setDeaneryStatus("Deanery deleted.");
+        } catch (error) {
+          setDeaneryStatus(error.message || "Failed to delete deanery.", true);
+        }
+      }
+
+      async function saveParishRow(row) {
+        const id = row.getAttribute("data-id");
+        const nameInput = row.querySelector("input[data-field='name']");
+        const hrefInput = row.querySelector("input[data-field='href']");
+        const tenKhacInput = row.querySelector("input[data-field='ten_khac']");
+        const diaChiInput = row.querySelector("input[data-field='dia_chi']");
+        const deanerySelect = row.querySelector("select[data-field='giao_hat']");
+        const payload = {
+          name: nameInput ? nameInput.value : "",
+          href: hrefInput ? hrefInput.value : "",
+          ten_khac: tenKhacInput ? tenKhacInput.value : "",
+          dia_chi: diaChiInput ? diaChiInput.value : "",
+          giao_hat: deanerySelect ? deanerySelect.value : "",
+        };
+
+        try {
+          setParishStatus("Saving parish...");
+          const response = await fetch("/api/parishes/" + id, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) {
+            const body = await response.json();
+            throw new Error(body.error || "Failed to save parish.");
+          }
+
+          await loadAll();
+          setParishStatus("Parish saved.");
+        } catch (error) {
+          setParishStatus(error.message || "Failed to save parish.", true);
+        }
+      }
+
+      async function deleteParishRow(row) {
+        const id = row.getAttribute("data-id");
+        if (!confirm("Delete this parish?")) {
+          return;
+        }
+
+        try {
+          setParishStatus("Deleting parish...");
+          const response = await fetch("/api/parishes/" + id, { method: "DELETE" });
+
+          if (!response.ok) {
+            const body = await response.json();
+            throw new Error(body.error || "Failed to delete parish.");
+          }
+
+          await loadAll();
+          setParishStatus("Parish deleted.");
+        } catch (error) {
+          setParishStatus(error.message || "Failed to delete parish.", true);
+        }
+      }
+
+      deaneryRows.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) {
+          return;
+        }
+
+        const row = button.closest("tr[data-id]");
+        if (!row) {
+          return;
+        }
+
+        const action = button.getAttribute("data-action");
+        if (action === "save") {
+          saveDeaneryRow(row);
+          return;
+        }
+
+        if (action === "delete") {
+          deleteDeaneryRow(row);
+        }
+      });
+
+      parishRows.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) {
+          return;
+        }
+
+        const row = button.closest("tr[data-id]");
+        if (!row) {
+          return;
+        }
+
+        const action = button.getAttribute("data-action");
+        if (action === "save") {
+          saveParishRow(row);
+          return;
+        }
+
+        if (action === "delete") {
+          deleteParishRow(row);
+        }
+      });
+
+      parishSearch.addEventListener("input", applyParishFilter);
+      deaneryCreateForm.addEventListener("submit", createDeanery);
+      parishCreateForm.addEventListener("submit", createParish);
+
+      loadAll();
+    </script>
+  </body>
+</html>`);
+  });
 }
 
 module.exports = adminRoutes;
