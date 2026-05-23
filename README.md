@@ -17,7 +17,12 @@ This project is a Fastify API starter connected to MongoDB.
 
    copy .env.example .env
 
-3. Update `MONGODB_URI` in `.env` if needed.
+3. Update the required values in `.env`:
+
+  - `MONGODB_URI`
+  - `SUPERADMIN_USERNAME`
+  - `SUPERADMIN_PASSWORD`
+  - `SUPERADMIN_DISPLAY_NAME` (optional)
 
 ## Run
 
@@ -34,7 +39,13 @@ Server starts on `PORT` (default `3000`).
 ## Endpoint
 
 - Health check: `GET /api/health`
+- Login page: `GET /login`
 - Admin page: `GET /admin`
+- Parish admin page: `GET /admin/parishes`
+- User management page (superadmin only): `GET /admin/users`
+- Login API: `POST /api/auth/login`
+- Logout API: `POST /api/auth/logout`
+- Current user API: `GET /api/auth/me`
 - Priests list: `GET /api/priests`
 - Priests create: `POST /api/priests`
 - Priests update: `PUT /api/priests/:id`
@@ -48,6 +59,16 @@ Server starts on `PORT` (default `3000`).
 - Parishes create: `POST /api/parishes`
 - Parishes update: `PUT /api/parishes/:id`
 - Parishes delete: `DELETE /api/parishes/:id`
+- Users list (superadmin only): `GET /api/users`
+- Users create (superadmin only): `POST /api/users`
+- Users update (superadmin only): `PUT /api/users/:id`
+- Users delete (superadmin only): `DELETE /api/users/:id`
+
+## Authentication
+
+- All admin pages now require login.
+- Admin navigation tabs are shown on all admin pages and hidden on the login page.
+- A default superadmin account is created from `.env` on first auth/user request.
 
 ## Admin Profile Manager
 

@@ -1,21 +1,390 @@
-async function adminRoutes(fastify) {
-  fastify.get("/admin", async function adminPage(_request, reply) {
-    return reply.type("text/html").send(`<!doctype html>
+const crypto = require("node:crypto");
+
+const SESSION_COOKIE = "admin_session";
+const SESSION_TTL_MS = Number(process.env.SESSION_TTL_MS || 1000 * 60 * 60 * 12);
+
+const sessions = new Map();
+
+function asString(value) {
+  return String(value || "").trim();
+}
+
+function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
+  const hash = crypto.scryptSync(String(password), salt, 64).toString("hex");
+  return salt + ":" + hash;
+}
+
+function verifyPassword(password, passwordHash) {
+  if (!passwordHash || !passwordHash.includes(":")) {
+    return false;
+  }
+
+  const [salt, storedHash] = String(passwordHash).split(":");
+  const computedHash = crypto.scryptSync(String(password || ""), salt, 64).toString("hex");
+  return crypto.timingSafeEqual(Buffer.from(storedHash, "hex"), Buffer.from(computedHash, "hex"));
+}
+
+function sanitizeUser(user) {
+  return {
+    id: String(user._id),
+    username: asString(user.username),
+    displayName: asString(user.displayName || user.username),
+    role: asString(user.role || "admin"),
+    isActive: Boolean(user.isActive !== false),
+    isDefaultSuperadmin: Boolean(user.isDefaultSuperadmin),
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  };
+}
+
+function createSession(user) {
+  const token = crypto.randomBytes(32).toString("hex");
+  sessions.set(token, {
+    userId: String(user._id),
+    username: asString(user.username),
+    displayName: asString(user.displayName || user.username),
+    role: asString(user.role || "admin"),
+    expiresAt: Date.now() + SESSION_TTL_MS,
+  });
+  return token;
+}
+
+function getSessionFromRequest(request) {
+  const token = request.cookies[SESSION_COOKIE];
+  if (!token) {
+    return null;
+  }
+
+  const session = sessions.get(token);
+  if (!session) {
+    return null;
+  }
+
+  if (session.expiresAt < Date.now()) {
+    sessions.delete(token);
+    return null;
+  }
+
+  session.expiresAt = Date.now() + SESSION_TTL_MS;
+  return { token, ...session };
+}
+
+function clearExpiredSessions() {
+  const now = Date.now();
+  for (const [token, session] of sessions.entries()) {
+    if (session.expiresAt < now) {
+      sessions.delete(token);
+    }
+  }
+}
+
+function navTabs(active) {
+  const tabs = [
+    { key: "priests", label: "Priests", href: "/admin" },
+    { key: "parishes", label: "Deaneries and Parishes", href: "/admin/parishes" },
+    { key: "users", label: "Users", href: "/admin/users" },
+  ];
+
+  return tabs
+    .map((tab) => {
+      const activeClass = tab.key === active ? " active" : "";
+      return '<a class="tab-link' + activeClass + '" href="' + tab.href + '">' + tab.label + "</a>";
+    })
+    .join("");
+}
+
+function adminShellStyles(theme = "teal") {
+  if (theme === "amber") {
+    return `
+      :root {
+        --bg: #f6f4ee;
+        --panel: #fffdf7;
+        --ink: #202022;
+        --muted: #707174;
+        --accent: #b45309;
+        --accent-soft: #fef3c7;
+        --danger: #b91c1c;
+        --line: #d7d3c6;
+      }
+    `;
+  }
+
+  if (theme === "blue") {
+    return `
+      :root {
+        --bg: #eef4ff;
+        --panel: #ffffff;
+        --ink: #14213d;
+        --muted: #5a6478;
+        --accent: #2563eb;
+        --accent-soft: #dbeafe;
+        --danger: #b91c1c;
+        --line: #c7d2fe;
+      }
+    `;
+  }
+
+  return `
+    :root {
+      --bg: #f2f5f8;
+      --panel: #ffffff;
+      --ink: #1f2a37;
+      --muted: #6b7280;
+      --accent: #0d9488;
+      --accent-soft: #ccfbf1;
+      --danger: #dc2626;
+      --line: #d1d5db;
+    }
+  `;
+}
+
+function adminNavHtml(activeTab) {
+  return `
+    <nav class="top-tabs" aria-label="Admin navigation">
+      <div class="tabs-left">
+        ${navTabs(activeTab)}
+      </div>
+      <div class="tabs-right">
+        <span id="currentUserText" class="current-user"></span>
+        <button id="logoutBtn" class="btn-muted" type="button">Logout</button>
+      </div>
+    </nav>
+  `;
+}
+
+function adminNavStyles() {
+  return `
+    .top-tabs {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.6rem;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.45rem;
+      flex-wrap: wrap;
+    }
+    .tabs-left {
+      display: flex;
+      gap: 0.45rem;
+      flex-wrap: wrap;
+    }
+    .tabs-right {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-left: auto;
+      flex-wrap: wrap;
+    }
+    .tab-link {
+      padding: 0.5rem 0.8rem;
+      border-radius: 10px;
+      color: #0f172a;
+      text-decoration: none;
+      font-weight: 700;
+      border: 1px solid transparent;
+    }
+    .tab-link.active {
+      background: var(--accent-soft);
+      border-color: var(--line);
+      color: #0b3b36;
+    }
+    .current-user {
+      color: var(--muted);
+      font-size: 0.86rem;
+      padding: 0 0.3rem;
+    }
+  `;
+}
+
+function navScript() {
+  return `
+    async function loadCurrentUser() {
+      try {
+        const response = await fetch("/api/auth/me", { credentials: "same-origin" });
+        if (!response.ok) {
+          window.location.href = "/login";
+          return;
+        }
+        const user = await response.json();
+        const text = user.displayName + " (" + user.role + ")";
+        const userNode = document.getElementById("currentUserText");
+        if (userNode) {
+          userNode.textContent = text;
+        }
+      } catch (_error) {
+        window.location.href = "/login";
+      }
+    }
+
+    async function logout() {
+      try {
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+        });
+      } finally {
+        window.location.href = "/login";
+      }
+    }
+
+    const logoutBtn = document.getElementById("logoutBtn");
+    if (logoutBtn) {
+      logoutBtn.addEventListener("click", logout);
+    }
+
+    loadCurrentUser();
+  `;
+}
+
+function buildLoginPage(errorMessage = "") {
+  const safeError = asString(errorMessage).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin Login</title>
+    <style>
+      :root {
+        --ink: #1f2937;
+        --muted: #6b7280;
+        --panel: #ffffff;
+        --line: #d1d5db;
+        --accent: #1d4ed8;
+        --danger: #b91c1c;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        color: var(--ink);
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background:
+          radial-gradient(circle at 10% 10%, #dbeafe 0, #dbeafe 22%, transparent 22%),
+          radial-gradient(circle at 84% 86%, #bfdbfe 0, #bfdbfe 18%, transparent 18%),
+          #eff6ff;
+      }
+      .card {
+        width: min(420px, 92vw);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        box-shadow: 0 12px 34px rgba(0, 0, 0, 0.08);
+      }
+      .card h1 {
+        margin: 0;
+        padding: 1.2rem 1.2rem 0.4rem;
+        font-size: 1.25rem;
+      }
+      .card p {
+        margin: 0;
+        padding: 0 1.2rem 0.9rem;
+        color: var(--muted);
+      }
+      form {
+        padding: 0 1.2rem 1.2rem;
+        display: grid;
+        gap: 0.75rem;
+      }
+      label {
+        display: grid;
+        gap: 0.35rem;
+        font-size: 0.92rem;
+      }
+      input {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.6rem 0.7rem;
+        font: inherit;
+      }
+      button {
+        border: 0;
+        border-radius: 10px;
+        background: var(--accent);
+        color: #fff;
+        padding: 0.6rem 0.7rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .error {
+        margin: 0;
+        padding: 0 1.2rem 0.8rem;
+        color: var(--danger);
+        min-height: 1.2rem;
+        font-size: 0.9rem;
+      }
+      .hint {
+        margin: 0;
+        padding: 0 1.2rem 1rem;
+        color: var(--muted);
+        font-size: 0.84rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>Admin Login</h1>
+      <p>Sign in to access parish and priest management.</p>
+      <div id="errorText" class="error">${safeError}</div>
+      <form id="loginForm">
+        <label>Username
+          <input id="username" autocomplete="username" required />
+        </label>
+        <label>Password
+          <input id="password" type="password" autocomplete="current-password" required />
+        </label>
+        <button type="submit">Login</button>
+      </form>
+      <p class="hint">Default superadmin credentials are read from environment variables.</p>
+    </main>
+
+    <script>
+      async function submitLogin(event) {
+        event.preventDefault();
+        const username = document.getElementById("username").value;
+        const password = document.getElementById("password").value;
+        const errorText = document.getElementById("errorText");
+
+        try {
+          const response = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ username, password }),
+          });
+
+          if (!response.ok) {
+            const body = await response.json();
+            throw new Error(body.error || "Login failed.");
+          }
+
+          window.location.href = "/admin";
+        } catch (error) {
+          errorText.textContent = error.message || "Login failed.";
+        }
+      }
+
+      document.getElementById("loginForm").addEventListener("submit", submitLogin);
+    </script>
+  </body>
+</html>`;
+}
+
+function buildPriestsPage() {
+  return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Priest Admin</title>
     <style>
-      :root {
-        --bg: #f2f5f8;
-        --panel: #ffffff;
-        --ink: #1f2a37;
-        --muted: #6b7280;
-        --accent: #0d9488;
-        --danger: #dc2626;
-        --line: #d1d5db;
-      }
+      ${adminShellStyles("teal")}
       * { box-sizing: border-box; }
       body {
         margin: 0;
@@ -28,8 +397,12 @@ async function adminRoutes(fastify) {
         min-height: 100vh;
       }
       .wrap {
-        width: 96vw; 
-        margin: 2rem 2rem;
+        width: 96vw;
+        margin: 1.2rem 2rem 2rem;
+        display: grid;
+        gap: 1rem;
+      }
+      .layout {
         display: grid;
         grid-template-columns: 340px 1fr;
         gap: 1rem;
@@ -170,91 +543,102 @@ async function adminRoutes(fastify) {
       .hidden {
         display: none;
       }
+      ${adminNavStyles()}
       @media (max-width: 920px) {
-        .wrap { grid-template-columns: 1fr; }
+        .layout { grid-template-columns: 1fr; }
+        .wrap {
+          margin: 1rem 1rem 1.4rem;
+          width: auto;
+        }
       }
     </style>
   </head>
   <body>
     <main class="wrap">
-      <section class="card">
-        <h2>Priest Profile</h2>
-        <p>Create or update profile documents.</p>
-        <form id="priestForm">
-          <input type="hidden" id="docId" />
-          <label>Name *<input id="name" required /></label>
-          <label>Nickname<input id="nickname" /></label>
-          <label>State
-            <select id="state">
-              <option value="active-diocese">active-diocese</option>
-              <option value="inactive">inactive</option>
-              <option value="retired">retired</option>
-              <option value="rip-diocese">rip-diocese</option>
-            </select>
-          </label>
-          <label>Avatar URL<input id="avatarUrl" /></label>
-          <label>Sinh Nam<input id="sinhNam" /></label>
-          <label>Le Quan Thay<input id="leQuanThay" /></label>
-          <label>Thu Phong Linh Muc<input id="thuPhongLinhMuc" /></label>
-          <label>Dia Chi<input id="diaChi" /></label>
-          <label>Giao Vu<textarea id="giaoVu"></textarea></label>
-          <div id="ripFields" class="rip-fields hidden">
-            <label>Que quan<input id="queQuan" /></label>
-            <label>Ngay mat<input id="ngayMat" /></label>
-            <label>Noi an tang<input id="noiAnTang" /></label>
-          </div>
-          <div class="actions">
-            <button class="btn-primary" type="submit">Save profile</button>
-            <button class="btn-muted" id="resetForm" type="button">Clear</button>
-          </div>
-        </form>
-      </section>
+      ${adminNavHtml("priests")}
 
-      <section class="card">
-        <h2>Priest Documents</h2>
-        <p>Stored in MongoDB collection: priest.</p>
-        <div class="list-tools">
-          <label>Quick search (name/state)
-            <input id="searchText" placeholder="Type name or state..." />
-          </label>
-          <div class="pager">
-            <div class="pager-controls">
-              <label>Rows per page
-                <select id="pageSize">
-                  <option value="10">10</option>
-                  <option value="20" selected>20</option>
-                  <option value="50">50</option>
-                  <option value="100">100</option>
-                </select>
-              </label>
-              <button class="btn-muted" id="prevPage" type="button">Prev</button>
-              <button class="btn-muted" id="nextPage" type="button">Next</button>
-              <div id="pageNumbers" class="page-numbers"></div>
+      <section class="layout">
+        <section class="card">
+          <h2>Priest Profile</h2>
+          <p>Create or update profile documents.</p>
+          <form id="priestForm">
+            <input type="hidden" id="docId" />
+            <label>Name *<input id="name" required /></label>
+            <label>Nickname<input id="nickname" /></label>
+            <label>State
+              <select id="state">
+                <option value="active-diocese">active-diocese</option>
+                <option value="active-religious">active-religious</option>
+                <option value="retired-diocese">retired-diocese</option>
+                <option value="rip-diocese">rip-diocese</option>
+              </select>
+            </label>
+            <label>Avatar URL<input id="avatarUrl" /></label>
+            <label>Sinh Nam<input id="sinhNam" /></label>
+            <label>Le Quan Thay<input id="leQuanThay" /></label>
+            <label>Thu Phong Linh Muc<input id="thuPhongLinhMuc" /></label>
+            <label>Dia Chi<input id="diaChi" /></label>
+            <label>Giao Vu<textarea id="giaoVu"></textarea></label>
+            <div id="ripFields" class="rip-fields hidden">
+              <label>Que quan<input id="queQuan" /></label>
+              <label>Ngay mat<input id="ngayMat" /></label>
+              <label>Noi an tang<input id="noiAnTang" /></label>
             </div>
-            <div id="pagerMeta" class="pager-meta"></div>
+            <div class="actions">
+              <button class="btn-primary" type="submit">Save profile</button>
+              <button class="btn-muted" id="resetForm" type="button">Clear</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card">
+          <h2>Priest Documents</h2>
+          <p>Stored in MongoDB collection: priest.</p>
+          <div class="list-tools">
+            <label>Quick search (name/state)
+              <input id="searchText" placeholder="Type name or state..." />
+            </label>
+            <div class="pager">
+              <div class="pager-controls">
+                <label>Rows per page
+                  <select id="pageSize">
+                    <option value="10">10</option>
+                    <option value="20" selected>20</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                  </select>
+                </label>
+                <button class="btn-muted" id="prevPage" type="button">Prev</button>
+                <button class="btn-muted" id="nextPage" type="button">Next</button>
+                <div id="pageNumbers" class="page-numbers"></div>
+              </div>
+              <div id="pagerMeta" class="pager-meta"></div>
+            </div>
           </div>
-        </div>
-        <div id="statusText" class="status"></div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Avatar</th>
-                <th>Name</th>
-                <th>Status</th>
-                <th>Ordination</th>
-                <th>Address</th>
-                <th>Mission</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="rows"></tbody>
-          </table>
-        </div>
+          <div id="statusText" class="status"></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Avatar</th>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>Ordination</th>
+                  <th>Address</th>
+                  <th>Mission</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </section>
       </section>
     </main>
 
     <script>
+      ${navScript()}
+
       const form = document.getElementById("priestForm");
       const rows = document.getElementById("rows");
       const statusText = document.getElementById("statusText");
@@ -615,27 +999,18 @@ async function adminRoutes(fastify) {
       loadPriests();
     </script>
   </body>
-</html>`);
-  });
+</html>`;
+}
 
-  fastify.get("/admin/parishes", async function parishAdminPage(_request, reply) {
-    return reply.type("text/html").send(`<!doctype html>
+function buildParishesPage() {
+  return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Deanery and Parish Admin</title>
     <style>
-      :root {
-        --bg: #f6f4ee;
-        --panel: #fffdf7;
-        --ink: #202022;
-        --muted: #707174;
-        --accent: #b45309;
-        --accent-soft: #fef3c7;
-        --danger: #b91c1c;
-        --line: #d7d3c6;
-      }
+      ${adminShellStyles("amber")}
       * { box-sizing: border-box; }
       body {
         margin: 0;
@@ -652,25 +1027,6 @@ async function adminRoutes(fastify) {
         display: grid;
         gap: 1rem;
       }
-      .top-tabs {
-        display: flex;
-        gap: 0.5rem;
-        background: var(--panel);
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        padding: 0.45rem;
-      }
-      .tab-link {
-        padding: 0.5rem 0.8rem;
-        border-radius: 10px;
-        color: #78350f;
-        text-decoration: none;
-        font-weight: 700;
-      }
-      .tab-link.active {
-        background: var(--accent-soft);
-        color: #92400e;
-      }
       .hero {
         background: linear-gradient(135deg, #fffbeb 0%, #fff7ed 100%);
         border: 1px solid var(--line);
@@ -685,14 +1041,9 @@ async function adminRoutes(fastify) {
         margin: 0.45rem 0 0;
         color: var(--muted);
       }
-      .hero a {
-        color: #92400e;
-        text-decoration: none;
-        font-weight: 700;
-      }
       .grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: 1fr;
         gap: 1rem;
       }
       .card {
@@ -785,10 +1136,8 @@ async function adminRoutes(fastify) {
       .parish-hidden {
         display: none;
       }
+      ${adminNavStyles()}
       @media (max-width: 980px) {
-        .grid {
-          grid-template-columns: 1fr;
-        }
         .inline-form.parish {
           grid-template-columns: 1fr;
         }
@@ -797,17 +1146,14 @@ async function adminRoutes(fastify) {
   </head>
   <body>
     <main class="wrap">
-      <nav class="top-tabs" aria-label="Admin navigation">
-        <a class="tab-link" href="/admin">Priests</a>
-        <a class="tab-link active" href="/admin/parishes">Deaneries and Parishes</a>
-      </nav>
+      ${adminNavHtml("parishes")}
 
       <section class="hero">
         <h1>Deanery and Parish Management</h1>
-        <p>Each parish belongs to one deanery via <strong>giao_hat</strong>. Manage both lists inline here. <a href="/admin">Open priest manager</a>.</p>
+        <p>Each parish belongs to one deanery via <strong>giao_hat</strong>. Manage both lists inline here.</p>
       </section>
 
-      <section class="">
+      <section class="grid">
         <section class="card">
           <h2>Deaneries</h2>
           <p>Collection: deanery</p>
@@ -893,6 +1239,8 @@ async function adminRoutes(fastify) {
     </main>
 
     <script>
+      ${navScript()}
+
       const deaneryRows = document.getElementById("deaneryRows");
       const parishRows = document.getElementById("parishRows");
       const parishSearch = document.getElementById("parishSearch");
@@ -1279,7 +1627,710 @@ async function adminRoutes(fastify) {
       loadAll();
     </script>
   </body>
-</html>`);
+</html>`;
+}
+
+function buildUsersPage() {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>User Management</title>
+    <style>
+      ${adminShellStyles("blue")}
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 15% 12%, #dbeafe 0, #dbeafe 18%, transparent 18%),
+          radial-gradient(circle at 88% 20%, #bfdbfe 0, #bfdbfe 16%, transparent 16%),
+          var(--bg);
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+      .wrap {
+        width: min(1180px, 96vw);
+        margin: 1.2rem auto 2rem;
+        display: grid;
+        gap: 1rem;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+      }
+      .card h2 {
+        margin: 0;
+        padding: 1rem 1rem 0.2rem;
+        font-size: 1.06rem;
+      }
+      .card p {
+        margin: 0;
+        padding: 0 1rem 0.8rem;
+        color: var(--muted);
+      }
+      .tools {
+        padding: 0 1rem 0.8rem;
+      }
+      .create-grid {
+        display: grid;
+        grid-template-columns: 1.4fr 1.2fr 1fr 1fr 1fr auto;
+        gap: 0.45rem;
+        align-items: end;
+      }
+      label {
+        display: grid;
+        gap: 0.35rem;
+        font-size: 0.9rem;
+      }
+      input, select {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.5rem 0.62rem;
+        font: inherit;
+      }
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 0.5rem 0.72rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .btn-primary { background: var(--accent); color: #fff; }
+      .btn-muted { background: #e5e7eb; color: var(--ink); }
+      .btn-danger { background: var(--danger); color: #fff; }
+      .status {
+        margin: 0 1rem 0.8rem;
+        color: var(--muted);
+        min-height: 1.2rem;
+      }
+      .table-wrap {
+        overflow: auto;
+        padding: 0 0.8rem 0.8rem;
+      }
+      table {
+        width: 100%;
+        min-width: 820px;
+        border-collapse: collapse;
+      }
+      th, td {
+        text-align: left;
+        vertical-align: top;
+        border-bottom: 1px solid var(--line);
+        padding: 0.58rem;
+      }
+      th {
+        color: var(--muted);
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .row-actions {
+        display: flex;
+        gap: 0.35rem;
+      }
+      .row-stack {
+        display: grid;
+        gap: 0.45rem;
+      }
+      .badge {
+        display: inline-flex;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        padding: 0.15rem 0.45rem;
+        font-size: 0.76rem;
+        color: var(--muted);
+      }
+      ${adminNavStyles()}
+      @media (max-width: 980px) {
+        .create-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      ${adminNavHtml("users")}
+
+      <section class="card">
+        <h2>User Management</h2>
+        <p>Only superadmin can access this page.</p>
+        <div class="tools">
+          <form id="createForm" class="create-grid">
+            <label>
+              Username
+              <input id="createUsername" required />
+            </label>
+            <label>
+              Display name
+              <input id="createDisplayName" />
+            </label>
+            <label>
+              Password
+              <input id="createPassword" type="password" required />
+            </label>
+            <label>
+              Role
+              <select id="createRole">
+                <option value="admin" selected>admin</option>
+                <option value="superadmin">superadmin</option>
+              </select>
+            </label>
+            <label>
+              Status
+              <select id="createActive">
+                <option value="true" selected>active</option>
+                <option value="false">disabled</option>
+              </select>
+            </label>
+            <button type="submit" class="btn-primary">Create</button>
+          </form>
+        </div>
+        <div id="statusText" class="status"></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Display Name</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Password</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      ${navScript()}
+
+      const createForm = document.getElementById("createForm");
+      const createUsername = document.getElementById("createUsername");
+      const createDisplayName = document.getElementById("createDisplayName");
+      const createPassword = document.getElementById("createPassword");
+      const createRole = document.getElementById("createRole");
+      const createActive = document.getElementById("createActive");
+      const rows = document.getElementById("rows");
+      const statusText = document.getElementById("statusText");
+
+      let cache = [];
+
+      function escapeHtml(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function setStatus(message, isError = false) {
+        statusText.textContent = message;
+        statusText.style.color = isError ? "#b91c1c" : "#5a6478";
+      }
+
+      function renderRows() {
+        rows.innerHTML = "";
+
+        if (!cache.length) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = "<td colspan='6'>No users found.</td>";
+          rows.appendChild(tr);
+          return;
+        }
+
+        cache.forEach((user) => {
+          const tr = document.createElement("tr");
+          tr.setAttribute("data-id", user.id);
+          tr.innerHTML =
+            "<td><div class='row-stack'><strong>" + escapeHtml(user.username) + "</strong>" +
+            (user.isDefaultSuperadmin ? "<span class='badge'>default superadmin</span>" : "") +
+            "</div></td>" +
+            "<td><input data-field='displayName' value='" + escapeHtml(user.displayName || "") + "' /></td>" +
+            "<td><select data-field='role'>" +
+            "<option value='admin'" + (user.role === "admin" ? " selected" : "") + ">admin</option>" +
+            "<option value='superadmin'" + (user.role === "superadmin" ? " selected" : "") + ">superadmin</option>" +
+            "</select></td>" +
+            "<td><select data-field='isActive'>" +
+            "<option value='true'" + (user.isActive ? " selected" : "") + ">active</option>" +
+            "<option value='false'" + (!user.isActive ? " selected" : "") + ">disabled</option>" +
+            "</select></td>" +
+            "<td><input data-field='password' type='password' placeholder='Leave blank to keep' /></td>" +
+            "<td><div class='row-actions'>" +
+            "<button class='btn-muted' data-action='save' type='button'>Save</button>" +
+            "<button class='btn-danger' data-action='delete' type='button'>Delete</button>" +
+            "</div></td>";
+          rows.appendChild(tr);
+        });
+      }
+
+      async function loadUsers() {
+        try {
+          setStatus("Loading users...");
+          const response = await fetch("/api/users", { credentials: "same-origin" });
+
+          if (response.status === 403) {
+            throw new Error("Only superadmin can access user management.");
+          }
+
+          if (!response.ok) {
+            const body = await response.json();
+            throw new Error(body.error || "Failed to load users.");
+          }
+
+          cache = await response.json();
+          renderRows();
+          setStatus("Loaded " + cache.length + " user(s).");
+        } catch (error) {
+          setStatus(error.message || "Failed to load users.", true);
+        }
+      }
+
+      async function createUser(event) {
+        event.preventDefault();
+
+        const payload = {
+          username: createUsername.value,
+          displayName: createDisplayName.value,
+          password: createPassword.value,
+          role: createRole.value,
+          isActive: createActive.value === "true",
+        };
+
+        try {
+          setStatus("Creating user...");
+          const response = await fetch("/api/users", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) {
+            const body = await response.json();
+            throw new Error(body.error || "Failed to create user.");
+          }
+
+          createForm.reset();
+          createRole.value = "admin";
+          createActive.value = "true";
+          await loadUsers();
+          setStatus("User created.");
+        } catch (error) {
+          setStatus(error.message || "Failed to create user.", true);
+        }
+      }
+
+      async function saveUser(row) {
+        const id = row.getAttribute("data-id");
+        const displayName = row.querySelector("input[data-field='displayName']").value;
+        const role = row.querySelector("select[data-field='role']").value;
+        const isActive = row.querySelector("select[data-field='isActive']").value === "true";
+        const password = row.querySelector("input[data-field='password']").value;
+
+        const payload = {
+          displayName,
+          role,
+          isActive,
+        };
+
+        if (password) {
+          payload.password = password;
+        }
+
+        try {
+          setStatus("Saving user...");
+          const response = await fetch("/api/users/" + id, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) {
+            const body = await response.json();
+            throw new Error(body.error || "Failed to save user.");
+          }
+
+          await loadUsers();
+          setStatus("User saved.");
+        } catch (error) {
+          setStatus(error.message || "Failed to save user.", true);
+        }
+      }
+
+      async function deleteUser(row) {
+        const id = row.getAttribute("data-id");
+        if (!confirm("Delete this user?")) {
+          return;
+        }
+
+        try {
+          setStatus("Deleting user...");
+          const response = await fetch("/api/users/" + id, {
+            method: "DELETE",
+            credentials: "same-origin",
+          });
+
+          if (!response.ok) {
+            const body = await response.json();
+            throw new Error(body.error || "Failed to delete user.");
+          }
+
+          await loadUsers();
+          setStatus("User deleted.");
+        } catch (error) {
+          setStatus(error.message || "Failed to delete user.", true);
+        }
+      }
+
+      rows.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) {
+          return;
+        }
+
+        const row = button.closest("tr[data-id]");
+        if (!row) {
+          return;
+        }
+
+        const action = button.getAttribute("data-action");
+        if (action === "save") {
+          saveUser(row);
+          return;
+        }
+
+        if (action === "delete") {
+          deleteUser(row);
+        }
+      });
+
+      createForm.addEventListener("submit", createUser);
+      loadUsers();
+    </script>
+  </body>
+</html>`;
+}
+
+async function adminRoutes(fastify) {
+  const users = () => fastify.mongo.db.collection("admin_user");
+
+  async function ensureDefaultSuperadmin() {
+    const envUsername = asString(process.env.SUPERADMIN_USERNAME || "superadmin");
+    const envPassword = asString(process.env.SUPERADMIN_PASSWORD || "superadmin123");
+    const envDisplayName = asString(process.env.SUPERADMIN_DISPLAY_NAME || "Default Superadmin");
+
+    if (!envUsername || !envPassword) {
+      throw new Error("SUPERADMIN_USERNAME and SUPERADMIN_PASSWORD are required.");
+    }
+
+    const now = new Date();
+    const existing = await users().findOne({ username: envUsername });
+
+    if (!existing) {
+      await users().insertOne({
+        username: envUsername,
+        displayName: envDisplayName,
+        passwordHash: hashPassword(envPassword),
+        role: "superadmin",
+        isActive: true,
+        isDefaultSuperadmin: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      return;
+    }
+
+    if (existing.isDefaultSuperadmin) {
+      await users().updateOne(
+        { _id: existing._id },
+        {
+          $set: {
+            displayName: envDisplayName || existing.displayName || envUsername,
+            passwordHash: hashPassword(envPassword),
+            role: "superadmin",
+            isActive: true,
+            updatedAt: now,
+          },
+        }
+      );
+    }
+  }
+
+  function sendAuthCookie(reply, token) {
+    reply.setCookie(SESSION_COOKIE, token, {
+      path: "/",
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: Math.floor(SESSION_TTL_MS / 1000),
+    });
+  }
+
+  function clearAuthCookie(reply) {
+    reply.clearCookie(SESSION_COOKIE, {
+      path: "/",
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    });
+  }
+
+  function requirePageAuth(request, reply, requireSuperadmin = false) {
+    const session = getSessionFromRequest(request);
+    if (!session) {
+      reply.redirect("/login");
+      return null;
+    }
+
+    if (requireSuperadmin && session.role !== "superadmin") {
+      reply.code(403).type("text/plain").send("Forbidden: superadmin only.");
+      return null;
+    }
+
+    return session;
+  }
+
+  function requireApiAuth(request, reply, requireSuperadmin = false) {
+    const session = getSessionFromRequest(request);
+    if (!session) {
+      reply.code(401).send({ error: "Authentication required." });
+      return null;
+    }
+
+    if (requireSuperadmin && session.role !== "superadmin") {
+      reply.code(403).send({ error: "Forbidden: superadmin only." });
+      return null;
+    }
+
+    return session;
+  }
+
+  fastify.get("/login", async function loginPage(request, reply) {
+    clearExpiredSessions();
+
+    const session = getSessionFromRequest(request);
+    if (session) {
+      return reply.redirect("/admin");
+    }
+
+    return reply.type("text/html").send(buildLoginPage());
+  });
+
+  fastify.post("/api/auth/login", async function loginApi(request, reply) {
+    clearExpiredSessions();
+    await ensureDefaultSuperadmin();
+
+    const username = asString(request.body && request.body.username).toLowerCase();
+    const password = asString(request.body && request.body.password);
+
+    if (!username || !password) {
+      return reply.code(400).send({ error: "username and password are required." });
+    }
+
+    const user = await users().findOne({ username });
+    if (!user || !user.isActive) {
+      return reply.code(401).send({ error: "Invalid username or password." });
+    }
+
+    if (!verifyPassword(password, user.passwordHash)) {
+      return reply.code(401).send({ error: "Invalid username or password." });
+    }
+
+    const token = createSession(user);
+    sendAuthCookie(reply, token);
+
+    return reply.send(sanitizeUser(user));
+  });
+
+  fastify.get("/api/auth/me", async function meApi(request, reply) {
+    const session = requireApiAuth(request, reply, false);
+    if (!session) {
+      return;
+    }
+
+    return reply.send({
+      id: session.userId,
+      username: session.username,
+      displayName: session.displayName,
+      role: session.role,
+    });
+  });
+
+  fastify.post("/api/auth/logout", async function logoutApi(request, reply) {
+    const session = getSessionFromRequest(request);
+    if (session) {
+      sessions.delete(session.token);
+    }
+    clearAuthCookie(reply);
+    return reply.send({ ok: true });
+  });
+
+  fastify.get("/admin", async function adminPage(request, reply) {
+    const session = requirePageAuth(request, reply, false);
+    if (!session) {
+      return;
+    }
+
+    return reply.type("text/html").send(buildPriestsPage());
+  });
+
+  fastify.get("/admin/parishes", async function parishAdminPage(request, reply) {
+    const session = requirePageAuth(request, reply, false);
+    if (!session) {
+      return;
+    }
+
+    return reply.type("text/html").send(buildParishesPage());
+  });
+
+  fastify.get("/admin/users", async function usersAdminPage(request, reply) {
+    const session = requirePageAuth(request, reply, true);
+    if (!session) {
+      return;
+    }
+
+    return reply.type("text/html").send(buildUsersPage());
+  });
+
+  fastify.get("/api/users", async function listUsersApi(request, reply) {
+    const session = requireApiAuth(request, reply, true);
+    if (!session) {
+      return;
+    }
+
+    await ensureDefaultSuperadmin();
+    const docs = await users().find({}).sort({ username: 1 }).toArray();
+    return docs.map(sanitizeUser);
+  });
+
+  fastify.post("/api/users", async function createUserApi(request, reply) {
+    const session = requireApiAuth(request, reply, true);
+    if (!session) {
+      return;
+    }
+
+    const username = asString(request.body && request.body.username).toLowerCase();
+    const displayName = asString(request.body && request.body.displayName) || username;
+    const password = asString(request.body && request.body.password);
+    const role = asString(request.body && request.body.role) || "admin";
+    const isActive = Boolean(request.body && request.body.isActive !== false);
+
+    if (!username || !password) {
+      return reply.code(400).send({ error: "username and password are required." });
+    }
+
+    if (!["admin", "superadmin"].includes(role)) {
+      return reply.code(400).send({ error: "role must be admin or superadmin." });
+    }
+
+    const existed = await users().findOne({ username });
+    if (existed) {
+      return reply.code(409).send({ error: "username already exists." });
+    }
+
+    const now = new Date();
+    const doc = {
+      username,
+      displayName,
+      passwordHash: hashPassword(password),
+      role,
+      isActive,
+      isDefaultSuperadmin: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const result = await users().insertOne(doc);
+    return reply.code(201).send(sanitizeUser({ _id: result.insertedId, ...doc }));
+  });
+
+  fastify.put("/api/users/:id", async function updateUserApi(request, reply) {
+    const session = requireApiAuth(request, reply, true);
+    if (!session) {
+      return;
+    }
+
+    const { id } = request.params;
+    if (!fastify.mongo.ObjectId.isValid(id)) {
+      return reply.code(400).send({ error: "Invalid id." });
+    }
+
+    const objectId = new fastify.mongo.ObjectId(id);
+    const current = await users().findOne({ _id: objectId });
+    if (!current) {
+      return reply.code(404).send({ error: "User not found." });
+    }
+
+    const displayName = asString(request.body && request.body.displayName) || current.displayName || current.username;
+    const requestedRole = asString(request.body && request.body.role) || current.role;
+    const role = current.isDefaultSuperadmin ? "superadmin" : requestedRole;
+    const isActive = current.isDefaultSuperadmin ? true : Boolean(request.body && request.body.isActive !== false);
+    const password = asString(request.body && request.body.password);
+
+    if (!["admin", "superadmin"].includes(role)) {
+      return reply.code(400).send({ error: "role must be admin or superadmin." });
+    }
+
+    const updateDoc = {
+      displayName,
+      role,
+      isActive,
+      updatedAt: new Date(),
+    };
+
+    if (password) {
+      updateDoc.passwordHash = hashPassword(password);
+    }
+
+    await users().updateOne({ _id: objectId }, { $set: updateDoc });
+    const updated = await users().findOne({ _id: objectId });
+    return reply.send(sanitizeUser(updated));
+  });
+
+  fastify.delete("/api/users/:id", async function deleteUserApi(request, reply) {
+    const session = requireApiAuth(request, reply, true);
+    if (!session) {
+      return;
+    }
+
+    const { id } = request.params;
+    if (!fastify.mongo.ObjectId.isValid(id)) {
+      return reply.code(400).send({ error: "Invalid id." });
+    }
+
+    const objectId = new fastify.mongo.ObjectId(id);
+    const current = await users().findOne({ _id: objectId });
+    if (!current) {
+      return reply.code(404).send({ error: "User not found." });
+    }
+
+    if (current.isDefaultSuperadmin) {
+      return reply.code(409).send({ error: "Default superadmin cannot be deleted." });
+    }
+
+    if (String(current._id) === session.userId) {
+      return reply.code(409).send({ error: "You cannot delete the current logged-in user." });
+    }
+
+    if (current.role === "superadmin") {
+      const superadminCount = await users().countDocuments({ role: "superadmin" });
+      if (superadminCount <= 1) {
+        return reply.code(409).send({ error: "Cannot delete last superadmin." });
+      }
+    }
+
+    await users().deleteOne({ _id: objectId });
+    return reply.code(204).send();
   });
 }
 
