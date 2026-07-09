@@ -2,6 +2,96 @@ function asString(value) {
   return String(value || "").trim();
 }
 
+function normalizeAttachments(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      return {
+        name: asString(item.name),
+        type: asString(item.type),
+        size: Number(item.size) || 0,
+        dataUrl: asString(item.dataUrl),
+      };
+    })
+    .filter((item) => item && item.name);
+}
+
+function normalizeSubParishes(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      return {
+        parish_name: asString(item.parish_name || item.parishName || item.name),
+        other_name: asString(item.other_name || item.otherName),
+        parish_link: asString(item.parish_link || item.parishLink || item.href),
+        address: asString(item.address),
+        ngay_thanh_lap: asString(item.ngay_thanh_lap || item.ngayThanhLap),
+        ten_thanh_quan_thay: asString(item.ten_thanh_quan_thay || item.tenThanhQuanThay),
+        ngay_mung_le_quan_thay: asString(item.ngay_mung_le_quan_thay || item.ngayMungLeQuanThay),
+        so_nhan_danh: asString(item.so_nhan_danh || item.soNhanDanh),
+        documents: normalizeAttachments(item.documents),
+        media: normalizeAttachments(item.media),
+      };
+    })
+    .filter((item) => item && item.parish_name);
+}
+
+function isValidDateOrYear(value) {
+  if (!value) {
+    return true;
+  }
+
+  return /^(\d{1,2}\/\d{1,2}\/\d{4}|\d{4})$/.test(value);
+}
+
+function isValidDayMonth(value) {
+  if (!value) {
+    return true;
+  }
+
+  return /^\d{1,2}\/\d{1,2}$/.test(value);
+}
+
+function getParishPayloadValidationError(payload) {
+  if (!isValidDateOrYear(payload.ngay_thanh_lap)) {
+    return "ngay_thanh_lap must be in dd/mm/yyyy or yyyy format.";
+  }
+
+  if (!isValidDateOrYear(payload.ngay_cung_hien)) {
+    return "ngay_cung_hien must be in dd/mm/yyyy or yyyy format.";
+  }
+
+  if (!isValidDayMonth(payload.ngay_mung_le_quan_thay)) {
+    return "ngay_mung_le_quan_thay must be in dd/mm format.";
+  }
+
+  for (const subParish of payload.giao_ho_truc_thuoc) {
+    if (!isValidDateOrYear(subParish.ngay_thanh_lap)) {
+      return "Each giao_ho_truc_thuoc.ngay_thanh_lap must be in dd/mm/yyyy or yyyy format.";
+    }
+
+    if (!isValidDayMonth(subParish.ngay_mung_le_quan_thay)) {
+      return "Each giao_ho_truc_thuoc.ngay_mung_le_quan_thay must be in dd/mm format.";
+    }
+  }
+
+  return "";
+}
+
 function toIdString(value) {
   if (!value) {
     return "";
@@ -39,6 +129,15 @@ function toParishDocument(doc, deaneryMap) {
     href: parishHref,
     ten_khac: asString(doc.ten_khac || ""),
     dia_chi: asString(doc.dia_chi || ""),
+    ngay_thanh_lap: asString(doc.ngay_thanh_lap || ""),
+    ten_thanh_quan_thay: asString(doc.ten_thanh_quan_thay || ""),
+    ngay_mung_le_quan_thay: asString(doc.ngay_mung_le_quan_thay || ""),
+    ngay_cung_hien: asString(doc.ngay_cung_hien || ""),
+    so_nhan_danh: asString(doc.so_nhan_danh || ""),
+    linh_muc_chinh_xu: asString(doc.linh_muc_chinh_xu || ""),
+    giao_ho_truc_thuoc: normalizeSubParishes(doc.giao_ho_truc_thuoc),
+    documents: normalizeAttachments(doc.documents),
+    media: normalizeAttachments(doc.media),
     giao_hat: deaneryId,
     deaneryName: deaneryMap.get(deaneryId) || "",
     createdAt: doc.createdAt,
@@ -84,6 +183,15 @@ function buildParishPayload(body = {}) {
     href: asString(body.href || body.giaoXuHref || ((body.giao_xu && body.giao_xu.href) || "")),
     ten_khac: asString(body.ten_khac || body.tenKhac),
     dia_chi: asString(body.dia_chi || body.diaChi),
+    ngay_thanh_lap: asString(body.ngay_thanh_lap || body.ngayThanhLap),
+    ten_thanh_quan_thay: asString(body.ten_thanh_quan_thay || body.tenThanhQuanThay),
+    ngay_mung_le_quan_thay: asString(body.ngay_mung_le_quan_thay || body.ngayMungLeQuanThay),
+    ngay_cung_hien: asString(body.ngay_cung_hien || body.ngayCungHien),
+    so_nhan_danh: asString(body.so_nhan_danh || body.soNhanDanh),
+    linh_muc_chinh_xu: asString(body.linh_muc_chinh_xu || body.linhMucChinhXu),
+    giao_ho_truc_thuoc: normalizeSubParishes(body.giao_ho_truc_thuoc || body.giaoHoTrucThuoc),
+    documents: normalizeAttachments(body.documents),
+    media: normalizeAttachments(body.media),
     giao_hat: asString(body.giao_hat),
   };
 }
@@ -214,6 +322,11 @@ async function parishManagementRoutes(fastify) {
       return reply.code(400).send({ error: "giao_hat must be a valid deanery id." });
     }
 
+    const payloadError = getParishPayloadValidationError(payload);
+    if (payloadError) {
+      return reply.code(400).send({ error: payloadError });
+    }
+
     const deanery = await deaneries().findOne({ _id: deaneryId });
     if (!deanery) {
       return reply.code(404).send({ error: "Deanery not found." });
@@ -229,6 +342,15 @@ async function parishManagementRoutes(fastify) {
       },
       ten_khac: payload.ten_khac,
       dia_chi: payload.dia_chi,
+      ngay_thanh_lap: payload.ngay_thanh_lap,
+      ten_thanh_quan_thay: payload.ten_thanh_quan_thay,
+      ngay_mung_le_quan_thay: payload.ngay_mung_le_quan_thay,
+      ngay_cung_hien: payload.ngay_cung_hien,
+      so_nhan_danh: payload.so_nhan_danh,
+      linh_muc_chinh_xu: payload.linh_muc_chinh_xu,
+      giao_ho_truc_thuoc: payload.giao_ho_truc_thuoc,
+      documents: payload.documents,
+      media: payload.media,
       giao_hat: deaneryIdString,
       createdAt: now,
       updatedAt: now,
@@ -242,6 +364,15 @@ async function parishManagementRoutes(fastify) {
       href: payload.href,
       ten_khac: payload.ten_khac,
       dia_chi: payload.dia_chi,
+      ngay_thanh_lap: payload.ngay_thanh_lap,
+      ten_thanh_quan_thay: payload.ten_thanh_quan_thay,
+      ngay_mung_le_quan_thay: payload.ngay_mung_le_quan_thay,
+      ngay_cung_hien: payload.ngay_cung_hien,
+      so_nhan_danh: payload.so_nhan_danh,
+      linh_muc_chinh_xu: payload.linh_muc_chinh_xu,
+      giao_ho_truc_thuoc: payload.giao_ho_truc_thuoc,
+      documents: payload.documents,
+      media: payload.media,
       giao_hat: deaneryIdString,
       deaneryName: asString(deanery.name || deanery.ten || deanery.title),
       createdAt: now,
@@ -266,6 +397,11 @@ async function parishManagementRoutes(fastify) {
       return reply.code(400).send({ error: "giao_hat must be a valid deanery id." });
     }
 
+    const payloadError = getParishPayloadValidationError(payload);
+    if (payloadError) {
+      return reply.code(400).send({ error: payloadError });
+    }
+
     const deanery = await deaneries().findOne({ _id: deaneryId });
     if (!deanery) {
       return reply.code(404).send({ error: "Deanery not found." });
@@ -284,6 +420,15 @@ async function parishManagementRoutes(fastify) {
           },
           ten_khac: payload.ten_khac,
           dia_chi: payload.dia_chi,
+          ngay_thanh_lap: payload.ngay_thanh_lap,
+          ten_thanh_quan_thay: payload.ten_thanh_quan_thay,
+          ngay_mung_le_quan_thay: payload.ngay_mung_le_quan_thay,
+          ngay_cung_hien: payload.ngay_cung_hien,
+          so_nhan_danh: payload.so_nhan_danh,
+          linh_muc_chinh_xu: payload.linh_muc_chinh_xu,
+          giao_ho_truc_thuoc: payload.giao_ho_truc_thuoc,
+          documents: payload.documents,
+          media: payload.media,
           giao_hat: deaneryIdString,
           updatedAt: now,
         },
