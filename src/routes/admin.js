@@ -1530,11 +1530,11 @@ function buildParishesPage() {
       }
 
       function isValidDateOrYear(value) {
-        return !value || /^(\d{1,2}\/\d{1,2}\/\d{4}|\d{4})$/.test(String(value).trim());
+        return !value || /^(\\d{1,2}\\/\\d{1,2}\\/\\d{4}|\\d{4})$/.test(String(value).trim());
       }
 
       function isValidDayMonth(value) {
-        return !value || /^\d{1,2}\/\d{1,2}$/.test(String(value).trim());
+        return !value || /^\\d{1,2}\\/\\d{1,2}$/.test(String(value).trim());
       }
 
       function readFilesAsAttachments(fileList) {
