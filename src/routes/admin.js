@@ -1529,7 +1529,7 @@ function buildParishesPage() {
         setParishStatus("Showing " + visible + " matched parish(es) out of " + parishCache.length + ".");
       }
 
-      function isValidDateOrYear(value) {
+      function isValidDateOrYear(value) { 
         return !value || /^(\\d{1,2}\\/\\d{1,2}\\/\\d{4}|\\d{4})$/.test(String(value).trim());
       }
 
