@@ -578,9 +578,9 @@ function buildPriestsPage() {
             <label>Le Quan Thay<input id="leQuanThay" /></label>
             <label>Thu Phong Linh Muc<input id="thuPhongLinhMuc" /></label>
             <label>Dia Chi<input id="diaChi" /></label>
+            <label>Que quan<input id="queQuan" /></label>
             <label>Giao Vu<textarea id="giaoVu"></textarea></label>
             <div id="ripFields" class="rip-fields hidden">
-              <label>Que quan<input id="queQuan" /></label>
               <label>Ngay mat<input id="ngayMat" /></label>
               <label>Noi an tang<input id="noiAnTang" /></label>
             </div>
@@ -769,7 +769,7 @@ function buildPriestsPage() {
           thuPhongLinhMuc: thuPhongLinhMuc.value,
           diaChi: diaChi.value,
           giaoVu: giaoVu.value,
-          queQuan: isRip ? queQuan.value : "",
+          queQuan: queQuan.value,
           ngayMat: isRip ? ngayMat.value : "",
           noiAnTang: isRip ? noiAnTang.value : "",
         };
@@ -779,7 +779,6 @@ function buildPriestsPage() {
         const isRip = state.value === "rip-diocese";
         ripFields.classList.toggle("hidden", !isRip);
         if (!isRip) {
-          queQuan.value = "";
           ngayMat.value = "";
           noiAnTang.value = "";
         }
@@ -829,9 +828,9 @@ function buildPriestsPage() {
             "<strong>" + escapeHtml(item.name || "") + "</strong>" +
             (item.nickname ? "<br /><small>Nickname: " + escapeHtml(item.nickname) + "</small>" : "") +
             "<br /><small>" + item.id + "</small>";
+          const queQuanInfo = "<br /><small>Que quan: " + escapeHtml(item.queQuan || "-") + "</small>";
           const ripInfo = item.state === "rip-diocese"
-            ? "<br /><small>Que quan: " + escapeHtml(item.queQuan || "-") +
-              " | Ngay mat: " + escapeHtml(item.ngayMat || "-") +
+            ? "<br /><small>Ngay mat: " + escapeHtml(item.ngayMat || "-") +
               " | Noi an tang: " + escapeHtml(item.noiAnTang || "-") + "</small>"
             : "";
           const tr = document.createElement("tr");
@@ -839,7 +838,7 @@ function buildPriestsPage() {
             "<td>" + avatarCell + "</td>" +
             "<td>" + nameCell + "</td>" +
             "<td><span class='chip'>" + escapeHtml(item.state || "active-diocese") + "</span></td>" +
-            "<td>Sinh nam: " + escapeHtml(item.sinhNam || "-") + "<br />Le quan thay: " + escapeHtml(item.leQuanThay || "-") + "<br />Thu phong: " + escapeHtml(item.thuPhongLinhMuc || "-") + ripInfo + "</td>" +
+            "<td>Sinh nam: " + escapeHtml(item.sinhNam || "-") + "<br />Le quan thay: " + escapeHtml(item.leQuanThay || "-") + "<br />Thu phong: " + escapeHtml(item.thuPhongLinhMuc || "-") + queQuanInfo + ripInfo + "</td>" +
             "<td>" + escapeHtml(item.diaChi || "-") + "</td>" +
             "<td>" + escapeHtml(item.giaoVu || "-") + "</td>" +
             "<td><div class='row-actions'>" +
