@@ -395,23 +395,38 @@ function buildPriestsPage() {
           radial-gradient(circle at 80% 20%, #dbeafe 0, #dbeafe 17%, transparent 17%),
           var(--bg);
         min-height: 100vh;
+        overflow: hidden;
       }
       .wrap {
         width: 96vw;
         margin: 1.2rem 2rem 2rem;
         display: grid;
+        grid-template-rows: auto 1fr;
         gap: 1rem;
+        height: calc(100vh - 3.2rem);
+        min-height: 0;
       }
       .layout {
         display: grid;
         grid-template-columns: 340px 1fr;
         gap: 1rem;
+        min-height: 0;
       }
       .card {
         background: var(--panel);
         border: 1px solid var(--line);
         border-radius: 14px;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+      }
+      .card-scroll {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      .profile-content,
+      .documents-content {
+        overflow: auto;
+        min-height: 0;
       }
       .card h2 {
         margin: 0;
@@ -445,6 +460,12 @@ function buildPriestsPage() {
         display: flex;
         gap: 0.5rem;
         flex-wrap: wrap;
+        align-items: center;
+      }
+      .form-alert {
+        font-size: 0.88rem;
+        color: var(--muted);
+        min-height: 1.2rem;
       }
       button {
         border: 0;
@@ -510,6 +531,10 @@ function buildPriestsPage() {
         background: var(--accent);
         color: #fff;
       }
+      .row-highlight td {
+        background: #fef3c7;
+        transition: background-color 0.35s ease;
+      }
       .pager-meta {
         color: var(--muted);
         font-size: 0.88rem;
@@ -545,10 +570,19 @@ function buildPriestsPage() {
       }
       ${adminNavStyles()}
       @media (max-width: 920px) {
+        body {
+          overflow: auto;
+        }
         .layout { grid-template-columns: 1fr; }
         .wrap {
           margin: 1rem 1rem 1.4rem;
           width: auto;
+          height: auto;
+          min-height: initial;
+        }
+        .profile-content,
+        .documents-content {
+          overflow: visible;
         }
       }
     </style>
@@ -558,79 +592,84 @@ function buildPriestsPage() {
       ${adminNavHtml("priests")}
 
       <section class="layout">
-        <section class="card">
+        <section class="card card-scroll">
           <h2>Priest Profile</h2>
           <p>Create or update profile documents.</p>
-          <form id="priestForm">
-            <input type="hidden" id="docId" />
-            <label>Name *<input id="name" required /></label>
-            <label>Nickname<input id="nickname" /></label>
-            <label>State
-              <select id="state">
-                <option value="active-diocese">active-diocese</option>
-                <option value="active-religious">active-religious</option>
-                <option value="retired-diocese">retired-diocese</option>
-                <option value="rip-diocese">rip-diocese</option>
-              </select>
-            </label>
-            <label>Avatar URL<input id="avatarUrl" /></label>
-            <label>Sinh Nam<input id="sinhNam" /></label>
-            <label>Le Quan Thay<input id="leQuanThay" /></label>
-            <label>Thu Phong Linh Muc<input id="thuPhongLinhMuc" /></label>
-            <label>Dia Chi<input id="diaChi" /></label>
-            <label>Que quan<input id="queQuan" /></label>
-            <label>Giao Vu<textarea id="giaoVu"></textarea></label>
-            <div id="ripFields" class="rip-fields hidden">
-              <label>Ngay mat<input id="ngayMat" /></label>
-              <label>Noi an tang<input id="noiAnTang" /></label>
-            </div>
-            <div class="actions">
-              <button class="btn-primary" type="submit">Save profile</button>
-              <button class="btn-muted" id="resetForm" type="button">Clear</button>
-            </div>
-          </form>
+          <div class="profile-content">
+            <form id="priestForm">
+              <input type="hidden" id="docId" />
+              <label>Name *<input id="name" required /></label>
+              <label>Nickname<input id="nickname" /></label>
+              <label>State
+                <select id="state">
+                  <option value="active-diocese">active-diocese</option>
+                  <option value="active-religious">active-religious</option>
+                  <option value="retired-diocese">retired-diocese</option>
+                  <option value="rip-diocese">rip-diocese</option>
+                </select>
+              </label>
+              <label>Avatar URL<input id="avatarUrl" /></label>
+              <label>Sinh Nam<input id="sinhNam" /></label>
+              <label>Le Quan Thay<input id="leQuanThay" /></label>
+              <label>Thu Phong Linh Muc<input id="thuPhongLinhMuc" /></label>
+              <label>Dia Chi<input id="diaChi" /></label>
+              <label>Que quan<input id="queQuan" /></label>
+              <label>Giao Vu<textarea id="giaoVu"></textarea></label>
+              <div id="ripFields" class="rip-fields hidden">
+                <label>Ngay mat<input id="ngayMat" /></label>
+                <label>Noi an tang<input id="noiAnTang" /></label>
+              </div>
+              <div class="actions">
+                <button class="btn-primary" type="submit">Save profile</button>
+                <button class="btn-muted" id="resetForm" type="button">Clear</button>
+                <span id="formAlert" class="form-alert" aria-live="polite"></span>
+              </div>
+            </form>
+          </div>
         </section>
 
-        <section class="card">
+        <section class="card card-scroll">
           <h2>Priest Documents</h2>
           <p>Stored in MongoDB collection: priest.</p>
-          <div class="list-tools">
-            <label>Quick search (name/state)
-              <input id="searchText" placeholder="Type name or state..." />
-            </label>
-            <div class="pager">
-              <div class="pager-controls">
-                <label>Rows per page
-                  <select id="pageSize">
-                    <option value="10">10</option>
-                    <option value="20" selected>20</option>
-                    <option value="50">50</option>
-                    <option value="100">100</option>
-                  </select>
-                </label>
-                <button class="btn-muted" id="prevPage" type="button">Prev</button>
-                <button class="btn-muted" id="nextPage" type="button">Next</button>
-                <div id="pageNumbers" class="page-numbers"></div>
+          <div class="documents-content">
+            <div class="list-tools">
+              <label>Quick search (name/state)
+                <input id="searchText" placeholder="Type name or state..." />
+              </label>
+              <div class="pager">
+                <div class="pager-controls">
+                  <label>Rows per page
+                    <select id="pageSize">
+                      <option value="10">10</option>
+                      <option value="20" selected>20</option>
+                      <option value="50">50</option>
+                      <option value="100">100</option>
+                    </select>
+                  </label>
+                  <button class="btn-muted" id="prevPage" type="button">Prev</button>
+                  <button class="btn-muted" id="nextPage" type="button">Next</button>
+                  <div id="pageNumbers" class="page-numbers"></div>
+                </div>
+                <div id="pagerMeta" class="pager-meta"></div>
               </div>
-              <div id="pagerMeta" class="pager-meta"></div>
             </div>
-          </div>
-          <div id="statusText" class="status"></div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Avatar</th>
-                  <th>Name</th>
-                  <th>Status</th>
-                  <th>Ordination</th>
-                  <th>Address</th>
-                  <th>Mission</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="rows"></tbody>
-            </table>
+            <div id="statusText" class="status"></div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Avatar</th>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Ordination</th>
+                    <th>Address</th>
+                    <th>Mission</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="rows"></tbody>
+              </table>
+            </div>
           </div>
         </section>
       </section>
@@ -657,6 +696,7 @@ function buildPriestsPage() {
       const noiAnTang = document.getElementById("noiAnTang");
       const ripFields = document.getElementById("ripFields");
       const resetForm = document.getElementById("resetForm");
+      const formAlert = document.getElementById("formAlert");
       const searchText = document.getElementById("searchText");
       const pageSize = document.getElementById("pageSize");
       const prevPage = document.getElementById("prevPage");
@@ -666,6 +706,8 @@ function buildPriestsPage() {
 
       let cache = [];
       let currentPage = 1;
+      let highlightedPriestId = "";
+      let highlightTimeout = null;
 
       function escapeHtml(value) {
         return String(value || "")
@@ -720,8 +762,8 @@ function buildPriestsPage() {
         nextPage.disabled = currentPage >= state.totalPages;
 
         pagerMeta.textContent =
-          "Showing " + startIndex + "-" + endIndex + " of " + filteredCount +
-          " | Page " + currentPage + " / " + state.totalPages;
+          "Hiển thị " + startIndex + "-" + endIndex + " trên tổng " + filteredCount +
+          " | Trang " + currentPage + " / " + state.totalPages;
 
         renderPageNumberButtons(state.totalPages);
       }
@@ -757,6 +799,27 @@ function buildPriestsPage() {
         statusText.style.color = isError ? "#b91c1c" : "#4b5563";
       }
 
+      function setFormAlert(message, isError = false) {
+        formAlert.textContent = message;
+        formAlert.style.color = isError ? "#b91c1c" : "#065f46";
+      }
+
+      function highlightSavedPriest(priestId) {
+        if (!priestId) {
+          return;
+        }
+
+        highlightedPriestId = priestId;
+        if (highlightTimeout) {
+          clearTimeout(highlightTimeout);
+        }
+
+        highlightTimeout = setTimeout(() => {
+          highlightedPriestId = "";
+          refreshListView();
+        }, 3000);
+      }
+
       function getPayload() {
         const isRip = state.value === "rip-diocese";
         return {
@@ -789,7 +852,12 @@ function buildPriestsPage() {
         form.reset();
         state.value = "active-diocese";
         syncRipFields();
-        name.focus();
+        setFormAlert("");
+        try {
+          name.focus({ preventScroll: true });
+        } catch (error) {
+          name.focus();
+        }
       }
 
       function fillForm(item) {
@@ -814,7 +882,7 @@ function buildPriestsPage() {
 
         if (!data.length) {
           const tr = document.createElement("tr");
-          tr.innerHTML = '<td colspan="7">No priest documents found.</td>';
+          tr.innerHTML = '<td colspan="7">Chưa có hồ sơ linh mục.</td>';
           rows.appendChild(tr);
           return;
         }
@@ -834,6 +902,9 @@ function buildPriestsPage() {
               " | Noi an tang: " + escapeHtml(item.noiAnTang || "-") + "</small>"
             : "";
           const tr = document.createElement("tr");
+          if (item.id === highlightedPriestId) {
+            tr.classList.add("row-highlight");
+          }
           tr.innerHTML =
             "<td>" + avatarCell + "</td>" +
             "<td>" + nameCell + "</td>" +
@@ -855,23 +926,42 @@ function buildPriestsPage() {
         renderRows(paged);
         updatePager(filtered.length);
         setStatus(
-          "Showing " + paged.length + " on current page, " + filtered.length +
-          " matched, " + cache.length + " total priest document(s)."
+          "Đang hiển thị " + paged.length + " mục trên trang hiện tại, " + filtered.length +
+          " mục khớp tìm kiếm, tổng " + cache.length + " hồ sơ linh mục."
         );
       }
 
       async function loadPriests() {
         try {
-          setStatus("Loading priest documents...");
+          setStatus("Đang tải hồ sơ linh mục...");
           const response = await fetch("/api/priests");
           const data = await response.json();
           cache = data;
           currentPage = 1;
           refreshListView();
-          setStatus("Loaded " + data.length + " priest document(s).");
+          setStatus("Đã tải " + data.length + " hồ sơ linh mục.");
         } catch (error) {
-          setStatus(error.message || "Failed to load priest documents.", true);
+          setStatus(error.message || "Không thể tải hồ sơ linh mục.", true);
         }
+      }
+
+      function upsertSavedPriest(savedPriest, isUpdate) {
+        if (!savedPriest || !savedPriest.id) {
+          return;
+        }
+
+        const index = cache.findIndex((item) => item.id === savedPriest.id);
+        if (index >= 0) {
+          cache[index] = savedPriest;
+          return;
+        }
+
+        if (isUpdate) {
+          cache.push(savedPriest);
+          return;
+        }
+
+        cache.unshift(savedPriest);
       }
 
       function refreshFilteredView() {
@@ -902,11 +992,13 @@ function buildPriestsPage() {
       async function savePriest(event) {
         event.preventDefault();
         const id = docId.value;
+        const isUpdate = Boolean(id);
         const method = id ? "PUT" : "POST";
         const url = id ? "/api/priests/" + id : "/api/priests";
 
         try {
-          setStatus("Saving priest document...");
+          setFormAlert("Đang lưu...");
+          setStatus("Đang lưu hồ sơ linh mục...");
           const response = await fetch(url, {
             method,
             headers: { "Content-Type": "application/json" },
@@ -915,29 +1007,34 @@ function buildPriestsPage() {
 
           if (!response.ok) {
             const errorBody = await response.json();
-            throw new Error(errorBody.error || "Failed to save document.");
+            throw new Error(errorBody.error || "Không thể lưu hồ sơ.");
           }
 
+          const savedPriest = await response.json();
+          upsertSavedPriest(savedPriest, isUpdate);
+          highlightSavedPriest(savedPriest.id);
+          refreshListView();
           clearForm();
-          await loadPriests();
-          setStatus("Priest document saved.");
+          setFormAlert("Lưu thành công.");
+          setStatus("Đã lưu hồ sơ linh mục và cập nhật bảng danh sách.");
         } catch (error) {
-          setStatus(error.message || "Failed to save priest document.", true);
+          setFormAlert(error.message || "Không thể lưu hồ sơ linh mục.", true);
+          setStatus(error.message || "Không thể lưu hồ sơ linh mục.", true);
         }
       }
 
       async function deletePriest(id) {
-        if (!confirm("Delete this priest document?")) {
+        if (!confirm("Bạn có chắc muốn xóa hồ sơ linh mục này?")) {
           return;
         }
 
         try {
-          setStatus("Deleting priest document...");
+          setStatus("Đang xóa hồ sơ linh mục...");
           const response = await fetch("/api/priests/" + id, { method: "DELETE" });
 
           if (!response.ok) {
             const errorBody = await response.json();
-            throw new Error(errorBody.error || "Failed to delete document.");
+            throw new Error(errorBody.error || "Không thể xóa hồ sơ.");
           }
 
           if (docId.value === id) {
@@ -945,9 +1042,9 @@ function buildPriestsPage() {
           }
 
           await loadPriests();
-          setStatus("Priest document deleted.");
+          setStatus("Đã xóa hồ sơ linh mục.");
         } catch (error) {
-          setStatus(error.message || "Failed to delete priest document.", true);
+          setStatus(error.message || "Không thể xóa hồ sơ linh mục.", true);
         }
       }
 
@@ -964,7 +1061,7 @@ function buildPriestsPage() {
           const selected = cache.find((item) => item.id === id);
           if (selected) {
             fillForm(selected);
-            setStatus("Editing selected priest document.");
+            setStatus("Đang chỉnh sửa hồ sơ linh mục đã chọn.");
           }
           return;
         }

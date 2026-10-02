@@ -125,11 +125,13 @@ async function priestRoutes(fastify) {
       }
     );
 
-    if (!result.value) {
+    const updatedDocument = result && result.value ? result.value : result;
+
+    if (!updatedDocument) {
       return reply.code(404).send({ error: "Priest not found." });
     }
 
-    return toDocument(result.value);
+    return toDocument(updatedDocument);
   });
 
   fastify.delete("/priests/:id", async function deletePriest(request, reply) {
